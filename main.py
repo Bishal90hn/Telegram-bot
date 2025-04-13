@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import feedparser
 import requests
 from bs4 import BeautifulSoup
@@ -14,9 +16,11 @@ import os
 from urllib.parse import urljoin
 from free_proxy import FreeProxy
 
+# Get Environment Variables
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
+
 # Configuration
-TELEGRAM_TOKEN = "7896793670:AAGILbEyLmVLuYfBFKFR5aMof2PaLNtGIC4"
-CHANNEL_ID = "@AiSamacharExpress"
 RSS_FEEDS = {
     "BBC": "http://feeds.bbci.co.uk/news/rss.xml",
     "The Hindu": "https://www.thehindu.com/news/national/feeder/default.rss",
