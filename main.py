@@ -1,184 +1,99 @@
-#!/usr/bin/env python3
-import os
-import feedparser
 import requests
 from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator
-from PIL import Image
-import io
-import schedule
-import time
-import telegram
-import random
-from datetime import datetime
 import json
 import os
-from urllib.parse import urljoin
-from free_proxy import FreeProxy
+import time
+import random
+import schedule
+from PIL import Image
+from io import BytesIO
+from telegram import Bot, InputMediaPhoto
+from config import BOT_TOKEN, CHANNEL_ID
 
-# Get Environment Variables
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-
-# Configuration
-RSS_FEEDS = {
-    "BBC": "http://feeds.bbci.co.uk/news/rss.xml",
-    "The Hindu": "https://www.thehindu.com/news/national/feeder/default.rss",
-    "Times of India": "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
-    "NDTV": "https://feeds.feedburner.com/ndtvnews-latest",
-    "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml"
+# Initialize Bot
+bot = Bot(token=BOT_TOKEN)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
 }
-PROXY_LIST = FreeProxy().get_proxy_list()  # Fetch proxies dynamically
-POSTED_NEWS_FILE = "posted_news.json"
-POST_INTERVAL = 15  # Minutes
 
-# Initialize Telegram bot
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
-
-# Load posted news to avoid duplicates
-def load_posted_news():
-    if os.path.exists(POSTED_NEWS_FILE):
-        with open(POSTED_NEWS_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-# Save posted news
-def save_posted_news(news):
-    with open(POSTED_NEWS_FILE, "w") as f:
-        json.dump(news, f)
-
-# Get a random proxy
-def get_random_proxy():
-    return random.choice(PROXY_LIST) if PROXY_LIST else None
-
-# Fetch Google Trends
-def fetch_google_trends():
-    url = "https://trends.google.co.in/trends/trendingsearches/daily?geo=IN"
-    proxy = get_random_proxy()
+# Telegram Channel Posting
+def post_to_telegram(image_url, caption):
     try:
-        proxies = {"http": proxy, "https": proxy} if proxy else None
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, proxies=proxies, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        trends = []
-        for trend in soup.select(".trends .title a")[:5]:  # Top 5 trends
-            trends.append({"title": trend.text.strip(), "link": urljoin(url, trend["href"])})
-        return trends
+        img_data = requests.get(image_url).content
+        photo = BytesIO(img_data)
+        photo.name = "deal.jpg"
+        bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=caption, parse_mode='HTML')
+        print("[✓] Posted on Telegram")
     except Exception as e:
-        print(f"Error fetching trends: {e}")
-        return []
+        print("Telegram Error:", e)
 
-# Fetch RSS news
-def fetch_rss_news():
-    news_items = []
-    for source, rss_url in RSS_FEEDS.items():
-        try:
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:3]:  # Top 3 per source
-                news_items.append({
-                    "title": entry.title,
-                    "description": entry.get("summary", entry.title),
-                    "link": entry.link,
-                    "source": source,
-                    "pub_date": entry.get("published", "")
-                })
-        except Exception as e:
-            print(f"Error fetching {source}: {e}")
-    return news_items
-
-# Translate text to Hindi
-def translate_to_hindi(text):
+# Flipkart Loot Deals Scraper
+def scrape_flipkart():
+    search_urls = [
+        "https://www.flipkart.com/search?q=men+tshirt+under+100",
+        "https://www.flipkart.com/search?q=grocery+under+99",
+        "https://www.flipkart.com/search?q=electronics+under+199"
+    ]
     try:
-        return GoogleTranslator(source="auto", target="hi").translate(text)
+        for url in search_urls:
+            r = requests.get(url, headers=HEADERS)
+            soup = BeautifulSoup(r.content, "lxml")
+            items = soup.select("a._1fQZEK, a.IRpwTa, a._2rpwqI")
+            count = 0
+            for item in items:
+                if count >= 1: break  # Only one deal per category
+                href = item.get("href")
+                full_url = f"https://www.flipkart.com{href}"
+                title = item.text[:100] + "..."
+                image_tag = item.find("img")
+                image = "https:" + image_tag["src"] if image_tag and "src" in image_tag.attrs else "https://via.placeholder.com/300.png"
+
+                price_tag = item.select_one("._30jeq3")
+                price = price_tag.text if price_tag else "Price Not Found"
+
+                caption = f"<b>Flipkart Loot Deal</b>\n\n{title}\nPrice: {price}\n\n<a href='{full_url}'>Buy Now</a>\n#Flipkart #Loot #Deals"
+                post_to_telegram(image, caption)
+                count += 1
+                time.sleep(10)
     except Exception as e:
-        print(f"Translation error: {e}")
-        return text
+        print("Flipkart Error:", e)
 
-# Download and edit image
-def get_image(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        img = Image.open(io.BytesIO(response.content))
-        img = img.resize((800, 400), Image.Resampling.LANCZOS)
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format="JPEG")
-        return img_byte_arr.getvalue()
-    except Exception:
-        return None
+# Telegram Loot Channels
+TELEGRAM_CHANNELS = [
+    "https://t.me/bigsavings_lootdeals",
+    "https://t.me/Loot_DealsX",
+    "https://t.me/+Th6aG5Zaxz_i_u7a",
+    "https://t.me/TrickXpert",
+    "https://t.me/+LNRQ0Y1-9RkzZDRl",
+    "https://t.me/+AdUPh392S6xhNmY1"
+]
 
-# Extract image from news page
-def extract_image_url(news_url):
-    try:
-        proxy = get_random_proxy()
-        proxies = {"http": proxy, "https": proxy} if proxy else None
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(news_url, headers=headers, proxies=proxies, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        img_tag = soup.find("meta", property="og:image")
-        return img_tag["content"] if img_tag else None
-    except Exception:
-        return None
-
-# Post news to Telegram
-def post_news():
-    posted_news = load_posted_news()
-    news_items = fetch_rss_news()
-    trends = fetch_google_trends()
-
-    # Combine news and trends
-    for trend in trends:
-        news_items.append({
-            "title": trend["title"],
-            "description": f"ट्रेंडिंग: {trend['title']}",
-            "link": trend["link"],
-            "source": "Google Trends"
-        })
-
-    # Shuffle to mix sources
-    random.shuffle(news_items)
-
-    for news in news_items:
-        news_id = news["link"]
-        if news_id in posted_news:
-            continue
-
-        # Translate if needed
-        title = translate_to_hindi(news["title"])
-        description = translate_to_hindi(news["description"])[:200] + "..."
-
-        # Create professional post
-        post_text = (
-            f"📰 *{title}* 📰\n\n"
-            f"{description}\n\n"
-            f"📖 स्रोत: {news['source']}\n"
-            f"🔗 पढ़ें: {news['link']}\n"
-            f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            f"#न्यूज़ #भारत #AiSamacharExpress"
-        )
-
-        # Get image
-        image_url = extract_image_url(news["link"])
-        image_data = get_image(image_url) if image_url else None
-
+def scrape_telegram_channels():
+    for url in TELEGRAM_CHANNELS:
         try:
-            if image_data:
-                bot.send_photo(chat_id=CHANNEL_ID, photo=image_data, caption=post_text, parse_mode="Markdown")
-            else:
-                bot.send_message(chat_id=CHANNEL_ID, text=post_text, parse_mode="Markdown")
-            posted_news.append(news_id)
-            save_posted_news(posted_news)
-            print(f"Posted: {title}")
-            break  # Post one news item per cycle
+            page = requests.get(url).text
+            soup = BeautifulSoup(page, 'html.parser')
+            msgs = soup.find_all('a', href=True)
+            for msg in msgs[:1]:  # Only 1 deal per channel
+                link = msg['href']
+                if "http" in link:
+                    deal_text = msg.text[:100] + "..."
+                    image_url = "https://via.placeholder.com/300x300.png?text=Loot+Deal"  # fallback image
+                    caption = f"<b>Loot Deal</b>\n\n{deal_text}\n\n<a href='{link}'>Buy Now</a>\n#Loot #Offer"
+                    post_to_telegram(image_url, caption)
+                    time.sleep(10)
         except Exception as e:
-            print(f"Error posting: {e}")
+            print("Telegram Scrape Error:", e)
 
-# Schedule posts
-schedule.every(POST_INTERVAL).minutes.do(post_news)
+# Schedule & Run
+def start_scheduled_bot():
+    schedule.every(2).hours.do(scrape_flipkart)
+    schedule.every().hour.do(scrape_telegram_channels)
 
-# Main loop
-if __name__ == "__main__":
-    print("Bot started...")
+    print("Bot started... Posting deals.")
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(30)
+
+if __name__ == "__main__":
+    start_scheduled_bot()
