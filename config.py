@@ -1,0 +1,3 @@
+
+BOT_TOKEN = "7980947590:AAFrmaCIFajzk0NjR-aZE7PwuIGrs45WGGo"
+CHANNEL_ID = "@DeelDhamaka3"
